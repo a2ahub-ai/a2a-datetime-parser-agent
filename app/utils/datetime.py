@@ -10,6 +10,7 @@ class AbsoluteTime(BaseModel):
     day: Optional[int] = None
     hour: Optional[int] = None
     minute: Optional[int] = None
+    second: Optional[int] = None
 
 
 class RelativeTime(BaseModel):
@@ -19,12 +20,25 @@ class RelativeTime(BaseModel):
     day: Optional[int] = None
     hour: Optional[int] = None
     minute: Optional[int] = None
+    second: Optional[int] = None
+
+
+class WeekdayOffset(BaseModel):
+    """Represents a weekday with an occurrence offset.
+    
+    E.g. WeekdayOffset(name='monday', offset=1) => next Monday
+         WeekdayOffset(name='friday', offset=-1) => last Friday
+         WeekdayOffset(name='wednesday', offset=0) => this Wednesday
+    """
+    name: str
+    offset: int
 
 
 class TimeSingle(BaseModel):
     """Represents a single point in time."""
     absolute: Optional[AbsoluteTime] = None
     relative: Optional[RelativeTime] = None
+    weekday: Optional[WeekdayOffset] = None
     now: Optional[bool] = None
 
 
@@ -32,6 +46,7 @@ class TimeRangeDate(BaseModel):
     """Represents a date in a time range."""
     absolute: Optional[AbsoluteTime] = None
     relative: Optional[RelativeTime] = None
+    weekday: Optional[WeekdayOffset] = None
     now: Optional[bool] = None
 
 
@@ -83,9 +98,63 @@ class TimeConvertedPayload(BaseModel):
     time_range: Optional[dict[str, ComputedDateTime]] = None
 
 
+# Weekday name to Python weekday index (Monday=0, Sunday=6)
+WEEKDAY_MAP = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
+
+
+def compute_weekday_date(current: datetime, weekday_name: str, offset: int) -> datetime:
+    """Compute a target date based on a weekday name and occurrence offset.
+
+    Args:
+        current: The current datetime
+        weekday_name: Lowercase weekday name (e.g., 'monday')
+        offset: Occurrence offset:
+            offset=1  => next occurrence of that weekday
+            offset=2  => the occurrence after next
+            offset=-1 => last (most recent past) occurrence
+            offset=-2 => the occurrence before last
+            offset=0  => this week's occurrence (could be past or future within the week)
+
+    Returns:
+        A datetime with the target date (time portion preserved from current)
+    """
+    target_wd = WEEKDAY_MAP.get(weekday_name.lower())
+    if target_wd is None:
+        return current  # Unknown weekday, return unchanged
+
+    current_wd = current.weekday()  # Monday=0 .. Sunday=6
+
+    if offset > 0:
+        # Future occurrences
+        days_ahead = (target_wd - current_wd) % 7
+        if days_ahead == 0:
+            days_ahead = 7  # If today is the target day, go to next week
+        days_ahead += (offset - 1) * 7
+        return current + timedelta(days=days_ahead)
+    elif offset < 0:
+        # Past occurrences
+        days_back = (current_wd - target_wd) % 7
+        if days_back == 0:
+            days_back = 7  # If today is the target day, go to last week
+        days_back += (abs(offset) - 1) * 7
+        return current - timedelta(days=days_back)
+    else:
+        # offset == 0: this week's occurrence
+        days_delta = target_wd - current_wd
+        return current + timedelta(days=days_delta)
+
+
 def convert_datetime_payload(payload: TimeInputPayload, current_date_str: str) -> TimeConvertedPayload:
     """
-    Convert datetime payload from Google Home format to Tuya format.
+    Convert datetime payload to computed datetime results.
 
     Args:
         payload: The input time payload
@@ -102,26 +171,28 @@ def convert_datetime_payload(payload: TimeInputPayload, current_date_str: str) -
             return True
         if time_obj.now:
             return False
+        if time_obj.weekday:
+            return False
         if time_obj.absolute:
             abs_time = time_obj.absolute
             if any([abs_time.year is not None, abs_time.month is not None, abs_time.day is not None,
-                    abs_time.hour is not None, abs_time.minute is not None]):
+                    abs_time.hour is not None, abs_time.minute is not None, abs_time.second is not None]):
                 return False
         if time_obj.relative:
             rel_time = time_obj.relative
             if any([rel_time.year is not None, rel_time.month is not None, rel_time.day is not None,
-                    rel_time.hour is not None, rel_time.minute is not None]):
+                    rel_time.hour is not None, rel_time.minute is not None, rel_time.second is not None]):
                 return False
         return True
 
     def has_time_units(t: Optional[TimeSingle | TimeRangeDate]) -> bool:
-        """Check if a time object has explicit time units (hour/minute)."""
+        """Check if a time object has explicit time units (hour/minute/second)."""
         if not t:
             return False
         abs_time = t.absolute or AbsoluteTime()
         rel_time = t.relative or RelativeTime()
-        return (abs_time.hour is not None or abs_time.minute is not None or
-                rel_time.hour is not None or rel_time.minute is not None)
+        return (abs_time.hour is not None or abs_time.minute is not None or abs_time.second is not None or
+                rel_time.hour is not None or rel_time.minute is not None or rel_time.second is not None)
 
     def build_expanded_endpoint(t_obj: Optional[TimeRangeDate], is_start: bool) -> ComputedDateTime:
         """Build an expanded endpoint for a time range when no explicit time units."""
@@ -143,7 +214,14 @@ def convert_datetime_payload(payload: TimeInputPayload, current_date_str: str) -
                 datetime=chosen.strftime('%Y-%m-%dT%H:%M:%S')
             )
 
-        # Apply relative shifts first
+        # Apply weekday offset first (sets date portion)
+        has_weekday = t_obj.weekday is not None
+        if has_weekday:
+            wd_date = compute_weekday_date(base_start, t_obj.weekday.name, t_obj.weekday.offset)
+            base_start = base_start.replace(year=wd_date.year, month=wd_date.month, day=wd_date.day)
+            base_end = base_end.replace(year=wd_date.year, month=wd_date.month, day=wd_date.day)
+
+        # Apply relative shifts
         if t_obj.relative:
             rel = t_obj.relative
             if rel.year is not None:
@@ -172,6 +250,9 @@ def convert_datetime_payload(payload: TimeInputPayload, current_date_str: str) -
             if rel.minute is not None:
                 base_start += timedelta(minutes=rel.minute)
                 base_end += timedelta(minutes=rel.minute)
+            if rel.second is not None:
+                base_start += timedelta(seconds=rel.second)
+                base_end += timedelta(seconds=rel.second)
 
         # Then apply absolute overrides (if present)
         if t_obj.absolute:
@@ -189,13 +270,17 @@ def convert_datetime_payload(payload: TimeInputPayload, current_date_str: str) -
                 h = abs_time.hour if abs_time.hour is not None else base_start.hour
                 m = abs_time.minute if abs_time.minute is not None else (
                     0 if abs_time.hour is not None else base_start.minute)
-                base_start = base_start.replace(hour=h, minute=m, second=0, microsecond=0)
-                base_end = base_end.replace(hour=h, minute=m, second=0, microsecond=0)
+                s = abs_time.second if abs_time.second is not None else 0
+                base_start = base_start.replace(hour=h, minute=m, second=s, microsecond=0)
+                base_end = base_end.replace(hour=h, minute=m, second=s, microsecond=0)
+            elif abs_time.second is not None:
+                base_start = base_start.replace(second=abs_time.second, microsecond=0)
+                base_end = base_end.replace(second=abs_time.second, microsecond=0)
 
-        # Determine if the input mentioned day/month/year
+        # Determine if the input mentioned day/month/year/weekday
         abs_time = t_obj.absolute or AbsoluteTime()
         rel_time = t_obj.relative or RelativeTime()
-        has_day = abs_time.day is not None or rel_time.day is not None
+        has_day = abs_time.day is not None or rel_time.day is not None or has_weekday
         has_month = abs_time.month is not None or rel_time.month is not None
         has_year = abs_time.year is not None or rel_time.year is not None
 
@@ -326,6 +411,11 @@ def compute_date_time(time_obj: TimeSingle | TimeRangeDate, current: datetime) -
     dt = datetime(current.year, current.month, current.day,
                   current.hour, current.minute, current.second)
 
+    # Apply weekday offset first (sets date portion)
+    if time_obj.weekday:
+        wd_date = compute_weekday_date(dt, time_obj.weekday.name, time_obj.weekday.offset)
+        dt = dt.replace(year=wd_date.year, month=wd_date.month, day=wd_date.day)
+
     # Apply relative shifts
     if time_obj.relative:
         rel = time_obj.relative
@@ -344,6 +434,8 @@ def compute_date_time(time_obj: TimeSingle | TimeRangeDate, current: datetime) -
             dt += timedelta(hours=rel.hour)
         if rel.minute is not None:
             dt += timedelta(minutes=rel.minute)
+        if rel.second is not None:
+            dt += timedelta(seconds=rel.second)
 
     # Apply absolute overrides
     if time_obj.absolute:
@@ -358,14 +450,10 @@ def compute_date_time(time_obj: TimeSingle | TimeRangeDate, current: datetime) -
         if abs_time.hour is not None or abs_time.minute is not None:
             h = abs_time.hour if abs_time.hour is not None else dt.hour
             m = abs_time.minute if abs_time.minute is not None else (0 if abs_time.hour is not None else dt.minute)
-            dt = dt.replace(hour=h, minute=m, second=0, microsecond=0)
-
-    # Check if time units were specified
-    has_time = False
-    if time_obj.absolute:
-        has_time = (time_obj.absolute.hour is not None or time_obj.absolute.minute is not None)
-    if time_obj.relative and not has_time:
-        has_time = (time_obj.relative.hour is not None or time_obj.relative.minute is not None)
+            s = abs_time.second if abs_time.second is not None else 0
+            dt = dt.replace(hour=h, minute=m, second=s, microsecond=0)
+        elif abs_time.second is not None:
+            dt = dt.replace(second=abs_time.second, microsecond=0)
 
     # Always return datetime in ISO format
     return ComputedDateTime(datetime=dt.strftime('%Y-%m-%dT%H:%M:%S'))
