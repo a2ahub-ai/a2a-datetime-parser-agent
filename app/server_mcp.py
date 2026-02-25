@@ -215,7 +215,7 @@ class DatetimeParserTool(Tool):
         current_date_str = datetime.now().isoformat()
 
         # Convert the payload using the datetime utility
-        result = convert_datetime_payload(payload, current_date_str)
+        result = convert_datetime_payload(payload, current_date_str, False)
 
         # Format the result for MCP response
         response_data: Dict[str, Any] = {

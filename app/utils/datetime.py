@@ -152,7 +152,7 @@ def compute_weekday_date(current: datetime, weekday_name: str, offset: int) -> d
         return current + timedelta(days=days_delta)
 
 
-def convert_datetime_payload(payload: TimeInputPayload, current_date_str: str) -> TimeConvertedPayload:
+def convert_datetime_payload(payload: TimeInputPayload, current_date_str: str, single_time_mode: bool = True) -> TimeConvertedPayload:
     """
     Convert datetime payload to computed datetime results.
 
@@ -345,12 +345,24 @@ def convert_datetime_payload(payload: TimeInputPayload, current_date_str: str) -
                 reason=reason
             )
 
-        time_single_result = compute_date_time(payload.time_single, current)
-        return TimeConvertedPayload(
-            parsable=parsable,
-            reason=reason,
-            time_single=time_single_result
-        )
+        if single_time_mode:
+            time_single_result = compute_date_time(payload.time_single, current)
+            return TimeConvertedPayload(
+                parsable=parsable,
+                reason=reason,
+                time_single=time_single_result
+            )
+        else:
+            # Convert single time to a range based on the finest time unit referenced
+            start_computed, end_computed = compute_single_to_range(payload.time_single, current)
+            return TimeConvertedPayload(
+                parsable=parsable,
+                reason=reason,
+                time_range={
+                    'start_date': start_computed,
+                    'end_date': end_computed
+                }
+            )
 
     elif payload.time_range:
         # Handle time_range
@@ -457,3 +469,146 @@ def compute_date_time(time_obj: TimeSingle | TimeRangeDate, current: datetime) -
 
     # Always return datetime in ISO format
     return ComputedDateTime(datetime=dt.strftime('%Y-%m-%dT%H:%M:%S'))
+
+
+def compute_single_to_range(
+    time_obj: TimeSingle | TimeRangeDate, current: datetime
+) -> tuple[ComputedDateTime, ComputedDateTime]:
+    """Convert a single time object into a (start, end) range.
+
+    The range is determined by the finest time unit referenced:
+      - second  → that exact second
+      - minute  → XX:YY:00  …  XX:YY:59
+      - hour    → XX:00:00  …  XX:59:59
+      - day / weekday → 00:00:00  …  23:59:59
+      - month   → 1st 00:00:00  …  last-day 23:59:59
+      - year    → Jan-1 00:00:00  …  Dec-31 23:59:59
+      - (none)  → full current day
+
+    Args:
+        time_obj: The time specification (TimeSingle or TimeRangeDate).
+        current:  The reference "now" datetime.
+
+    Returns:
+        A tuple of (start ComputedDateTime, end ComputedDateTime).
+    """
+    if time_obj.now:
+        now_result = ComputedDateTime(now=True)
+        return now_result, now_result
+
+    base_start = datetime(
+        current.year, current.month, current.day,
+        current.hour, current.minute, current.second,
+    )
+    base_end = datetime(
+        current.year, current.month, current.day,
+        current.hour, current.minute, current.second,
+    )
+
+    # ── 1. Weekday offset ──────────────────────────────────────────────
+    has_weekday = time_obj.weekday is not None
+    if has_weekday:
+        wd_date = compute_weekday_date(base_start, time_obj.weekday.name, time_obj.weekday.offset)
+        base_start = base_start.replace(year=wd_date.year, month=wd_date.month, day=wd_date.day)
+        base_end = base_end.replace(year=wd_date.year, month=wd_date.month, day=wd_date.day)
+
+    # ── 2. Relative shifts ─────────────────────────────────────────────
+    if time_obj.relative:
+        rel = time_obj.relative
+        if rel.year is not None:
+            base_start = base_start.replace(year=base_start.year + rel.year)
+            base_end = base_end.replace(year=base_end.year + rel.year)
+        if rel.month is not None:
+            new_month_s = base_start.month + rel.month
+            new_month_e = base_end.month + rel.month
+            y_off_s = (new_month_s - 1) // 12
+            y_off_e = (new_month_e - 1) // 12
+            base_start = base_start.replace(
+                year=base_start.year + y_off_s,
+                month=((new_month_s - 1) % 12) + 1,
+            )
+            base_end = base_end.replace(
+                year=base_end.year + y_off_e,
+                month=((new_month_e - 1) % 12) + 1,
+            )
+        if rel.day is not None:
+            base_start += timedelta(days=rel.day)
+            base_end += timedelta(days=rel.day)
+        if rel.hour is not None:
+            base_start += timedelta(hours=rel.hour)
+            base_end += timedelta(hours=rel.hour)
+        if rel.minute is not None:
+            base_start += timedelta(minutes=rel.minute)
+            base_end += timedelta(minutes=rel.minute)
+        if rel.second is not None:
+            base_start += timedelta(seconds=rel.second)
+            base_end += timedelta(seconds=rel.second)
+
+    # ── 3. Absolute overrides ──────────────────────────────────────────
+    if time_obj.absolute:
+        a = time_obj.absolute
+        if a.year is not None:
+            base_start = base_start.replace(year=a.year)
+            base_end = base_end.replace(year=a.year)
+        if a.month is not None:
+            base_start = base_start.replace(month=a.month)
+            base_end = base_end.replace(month=a.month)
+        if a.day is not None:
+            base_start = base_start.replace(day=a.day)
+            base_end = base_end.replace(day=a.day)
+        if a.hour is not None or a.minute is not None:
+            h = a.hour if a.hour is not None else base_start.hour
+            m = a.minute if a.minute is not None else (
+                0 if a.hour is not None else base_start.minute
+            )
+            s = a.second if a.second is not None else 0
+            base_start = base_start.replace(hour=h, minute=m, second=s, microsecond=0)
+            base_end = base_end.replace(hour=h, minute=m, second=s, microsecond=0)
+        elif a.second is not None:
+            base_start = base_start.replace(second=a.second, microsecond=0)
+            base_end = base_end.replace(second=a.second, microsecond=0)
+
+    # ── 4. Determine finest referenced unit and expand range ───────────
+    abs_t = time_obj.absolute or AbsoluteTime()
+    rel_t = time_obj.relative or RelativeTime()
+
+    has_second = abs_t.second is not None or rel_t.second is not None
+    has_minute = abs_t.minute is not None or rel_t.minute is not None
+    has_hour   = abs_t.hour   is not None or rel_t.hour   is not None
+    has_day    = abs_t.day    is not None or rel_t.day    is not None or has_weekday
+    has_month  = abs_t.month  is not None or rel_t.month  is not None
+    has_year   = abs_t.year   is not None or rel_t.year   is not None
+
+    if has_second:
+        # Exact second – no expansion needed
+        pass
+    elif has_minute:
+        base_start = base_start.replace(second=0, microsecond=0)
+        base_end   = base_end.replace(second=59, microsecond=0)
+    elif has_hour:
+        base_start = base_start.replace(minute=0, second=0, microsecond=0)
+        base_end   = base_end.replace(minute=59, second=59, microsecond=0)
+    elif has_day:
+        base_start = base_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        base_end   = base_end.replace(hour=23, minute=59, second=59, microsecond=0)
+    elif has_month:
+        base_start = base_start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if base_end.month == 12:
+            last_day = datetime(base_end.year + 1, 1, 1) - timedelta(days=1)
+        else:
+            last_day = datetime(base_end.year, base_end.month + 1, 1) - timedelta(days=1)
+        base_end = base_end.replace(
+            day=last_day.day, hour=23, minute=59, second=59, microsecond=0,
+        )
+    elif has_year:
+        base_start = base_start.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        base_end   = base_end.replace(month=12, day=31, hour=23, minute=59, second=59, microsecond=0)
+    else:
+        # No explicit unit → treat as current day
+        base_start = base_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        base_end   = base_end.replace(hour=23, minute=59, second=59, microsecond=0)
+
+    return (
+        ComputedDateTime(datetime=base_start.strftime('%Y-%m-%dT%H:%M:%S')),
+        ComputedDateTime(datetime=base_end.strftime('%Y-%m-%dT%H:%M:%S')),
+    )
