@@ -80,7 +80,7 @@ class AgentServer:
         # Create custom HTTP client for logging
         self.http_client = LoggingHTTPClient()
 
-        self.llm = GroqLLMProvider(api_key=BaseConfig.GROQ_API_KEY, model_name="openai/gpt-oss-20b")
+        self.llm = GroqLLMProvider(api_key=BaseConfig.GROQ_API_KEY, model_name="openai/gpt-oss-120b")
         # self.llm = OpenAILLMProvider(api_key=BaseConfig.OPENAI_API_KEY, model_name="gpt-4.1-nano")
         # self.llm = OllamaLLMProvider(api_key="", model_name="lfm2.5-thinking:latest") # phi4-mini:latest qwen3:4b gemma3:4b-it-qat qwen3:1.7b lfm2.5-thinking:latest
 
@@ -156,7 +156,8 @@ class AgentServer:
         # Store the session
         self.servers[server_name] = session
 
-    async def process_query(self, messages: List[ChatCompletionMessageParam]
+    async def process_query(self, messages: List[ChatCompletionMessageParam], 
+                            extra_arguments: Dict[str, Any] = None
                             ) -> AsyncGenerator[ChatCompletionStreamResponseType, None]:
         """Process a query using GroqLLMProvider and available tools"""
         logger.info("🚀 Processing new query")
@@ -249,6 +250,18 @@ class AgentServer:
                 for func_call in function_calls:
                     tool_name = response_json_schema.name
                     tool_args = func_call["arguments"]
+
+                    # Ensure tool_args is a dict if it comes as a JSON string
+                    if isinstance(tool_args, str):
+                        try:
+                            tool_args = json.loads(tool_args)
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse tool arguments: {tool_args}")
+                            tool_args = {}
+
+                    if extra_arguments and isinstance(tool_args, dict):
+                        logger.info(f"Injecting extra arguments into tool call: {extra_arguments}")
+                        tool_args.update(extra_arguments)
 
                     # Find which server has this tool
                     if tool_name in tool_to_server_map:

@@ -343,6 +343,7 @@ async def completeTask(
         configuration=MessageSendConfiguration(
             accepted_output_modes=['text'],
         ),
+        metadata={'single_time_mode': False},
     )
 
     if use_push_notifications:

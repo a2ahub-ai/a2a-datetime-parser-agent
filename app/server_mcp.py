@@ -10,6 +10,7 @@ from fastmcp.tools.tool import ToolResult
 from mcp.types import TextContent
 
 from app.config.settings import BaseConfig
+from app.utils.logger import logger
 from app.utils.datetime import (
     convert_datetime_payload,
     TimeInputPayload,
@@ -93,15 +94,13 @@ class DatetimeParserTool(Tool):
             "components_count": {
                 "type": "integer",
                 "description": "Exact length of the time_elements array"
-            }
+            },
         },
         "required": ["reasoning", "parsable", "time_elements", "components_count"],
-        "additionalProperties": False
     }
 
     async def run(self, arguments: Dict[str, Any]) -> ToolResult:
-        import sys
-        print(f"[datetime-parser-mcp-server] Received arguments: {arguments}", file=sys.stderr)
+        logger.info(f"[datetime-parser-mcp-server] Received arguments: {arguments}")
 
         parsable = arguments.get("parsable", False)
         time_elements = arguments.get("time_elements", [])
@@ -112,7 +111,7 @@ class DatetimeParserTool(Tool):
                 "parsable": False,
                 "reason": arguments.get("reasoning", "Could not parse datetime from input")
             }
-            print(f"[datetime-parser-mcp-server] Not parsable result: {response_data}", file=sys.stderr)
+            logger.warning(f"[datetime-parser-mcp-server] Not parsable result: {response_data}")
             return ToolResult(structured_content=response_data)
 
         # ── Partition elements by time_range ──
@@ -214,8 +213,11 @@ class DatetimeParserTool(Tool):
         # Get current datetime as ISO string
         current_date_str = datetime.now().isoformat()
 
+        # Extract single_time_mode from arguments, default to True if not present
+        single_time_mode = arguments.get("single_time_mode", True)
+
         # Convert the payload using the datetime utility
-        result = convert_datetime_payload(payload, current_date_str, False)
+        result = convert_datetime_payload(payload, current_date_str, single_time_mode)
 
         # Format the result for MCP response
         response_data: Dict[str, Any] = {
@@ -233,7 +235,7 @@ class DatetimeParserTool(Tool):
                 "end_date": result.time_range["end_date"].model_dump(exclude_none=True)
             }
 
-        print(f"[datetime-parser-mcp-server] Converted result: {response_data}", file=sys.stderr)
+        logger.info(f"[datetime-parser-mcp-server] Converted result: {response_data}")
 
         return ToolResult(
             structured_content=response_data
@@ -245,5 +247,5 @@ mcp.add_tool(DatetimeParserTool())
 
 if __name__ == "__main__":
     # Use sys.stderr for logging to avoid interfering with MCP stdio transport
-    print("Starting MCP Server with stdio transport", file=sys.stderr)
+    logger.info("Starting MCP Server with stdio transport")
     mcp.run(transport="stdio")

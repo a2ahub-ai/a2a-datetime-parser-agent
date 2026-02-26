@@ -86,6 +86,7 @@ class DatetimeParserAgentExecutor(AgentExecutor):
         # dump context for debugging
         if context._params:
             logger.debug(context._params.metadata if context._params.metadata else "No metadata")
+            # {'single_time_mode': False}
         logger.debug(context.context_id)
         logger.debug(context.task_id)
 
@@ -104,13 +105,20 @@ class DatetimeParserAgentExecutor(AgentExecutor):
 
         # Convert task history to messages
         messages = self._convert_task_history_to_messages(task.history)
+        
+        # Prepare extra arguments for tool execution from context metadata
+        extra_arguments = {}
+        if context._params and context._params.metadata:
+            if 'single_time_mode' in context._params.metadata:
+                extra_arguments['single_time_mode'] = context._params.metadata['single_time_mode']
+
         if not messages and query:
             messages.append(cast(ChatCompletionMessageParam, {
                 "role": "user",
                 "content": query
             }))
 
-        async for response in self.runner.process_query(messages):
+        async for response in self.runner.process_query(messages, extra_arguments=extra_arguments):
             logger.debug(f"[weather-agent] response type: {response['type']}")
 
             if response["type"] == ChatCompletionTypeEnum.CONTENT:
