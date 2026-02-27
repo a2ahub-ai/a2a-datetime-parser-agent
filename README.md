@@ -33,6 +33,16 @@ An autonomous agent that provides datetime parsing capabilities using the A2A SD
     Edit `.env` and provide your API keys:
     - `OPENAI_API_KEY` or `GROQ_API_KEY`: Required for the LLM.
     - `ACCUWEATHER_API_KEY`: Required for weather data.
+    - `SERVICE_NAME`: The name of the service (default: a2a-datetime-parser-agent).
+    - `AGENT_ID`: Unique identifier for the agent (default: datetime-parser-agent).
+    - `AGENT_NAME`: Human-readable name (default: Datetime Parser Agent).
+    - `HOST`: Host to bind to (default: localhost).
+    - `PORT`: Port to listen on (default: 10001).
+    - `APP_URL`: The full URL where the agent is reachable.
+    - `ENV`: Environment name (local, development, production).
+    - `DEBUG`: Enable/disable debug mode (true/false).
+    - `LOG_LEVEL`: Logging level (INFO, DEBUG, ERROR).
+    - `DISABLE_LOG`: Disable logging (true/false).
 
 ## Running the Agent Server
 

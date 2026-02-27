@@ -70,8 +70,30 @@ class DatetimeParserTool(Tool):
                             "required": ["mode", "time_range", "offset_unit", "offset_value"],
                             "additionalProperties": False
                         },
+                        # {
+                        #     "properties": {
+                        #         "time_range": {
+                        #             "type": "string",
+                        #             "enum": ["start", "end"]
+                        #         },
+                        #         "offset_unit": {
+                        #             "type": "string",
+                        #             "enum": ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+                        #         },
+                        #         "offset_value": {
+                        #             "type": "integer",
+                        #             "description": "For weekdays, use offset_unit for the day and offset_value for the occurrence (e.g., offset_unit='monday', offset_value=2 for 'the Monday after next')."
+                        #         }
+                        #     },
+                        #     "required": ["time_range", "offset_unit", "offset_value"],
+                        #     "additionalProperties": False
+                        # },
                         {
                             "properties": {
+                                "mode": {
+                                    "type": "string",
+                                    "enum": ["absolute", "relative"]
+                                },
                                 "time_range": {
                                     "type": "string",
                                     "enum": ["start", "end"]
@@ -82,10 +104,10 @@ class DatetimeParserTool(Tool):
                                 },
                                 "offset_value": {
                                     "type": "integer",
-                                    "description": "For weekdays, use offset_unit for the day and offset_value for the occurrence (e.g., offset_unit='monday', offset_value=2 for 'the Monday after next')."
+                                    "description": "For weekdays, use offset_unit for the day and offset_value for the occurrence (e.g., offset_unit='monday', offset_value=0 for 'this Monday', offset_value=1 for 'next Monday', offset_value=-1 for 'last Monday', etc.). The mode field can be set to either 'absolute' or 'relative' based on your preference, as long as the weekday information is correctly conveyed through the offset_unit and offset_value."
                                 }
                             },
-                            "required": ["time_range", "offset_unit", "offset_value"],
+                            "required": ["mode", "time_range", "offset_unit", "offset_value"],
                             "additionalProperties": False
                         }
                     ]
@@ -107,12 +129,7 @@ class DatetimeParserTool(Tool):
 
         # Early exit if not parsable or no elements
         if not parsable or not time_elements:
-            response_data: Dict[str, Any] = {
-                "parsable": False,
-                "reason": arguments.get("reasoning", "Could not parse datetime from input")
-            }
-            logger.warning(f"[datetime-parser-mcp-server] Not parsable result: {response_data}")
-            return ToolResult(structured_content=response_data)
+            return ToolResult(content=TextContent(type="text", text=f"{arguments.get('reasoning', 'Could not parse datetime from input')}"))
 
         # ── Partition elements by time_range ──
         DATE_UNITS = {"year", "month", "day"}
@@ -220,9 +237,7 @@ class DatetimeParserTool(Tool):
         result = convert_datetime_payload(payload, current_date_str, single_time_mode)
 
         # Format the result for MCP response
-        response_data: Dict[str, Any] = {
-            "parsable": result.parsable
-        }
+        response_data: Dict[str, Any] = {}
 
         if result.reason:
             response_data["reason"] = result.reason

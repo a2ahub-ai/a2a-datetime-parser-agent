@@ -82,7 +82,7 @@ class DatetimeParserAgentExecutor(AgentExecutor):
         context: RequestContext,
         event_queue: EventQueue,
     ):
-        logger.debug("[weather-agent] execute entered")
+        logger.debug("[datetime-parser-agent] execute entered")
         # dump context for debugging
         if context._params:
             logger.debug(context._params.metadata if context._params.metadata else "No metadata")
@@ -119,18 +119,16 @@ class DatetimeParserAgentExecutor(AgentExecutor):
             }))
 
         async for response in self.runner.process_query(messages, extra_arguments=extra_arguments):
-            logger.debug(f"[weather-agent] response type: {response['type']}")
+            logger.debug(f"[datetime-parser-agent] response type: {response}")
 
             if response["type"] == ChatCompletionTypeEnum.CONTENT:
                 if response["data"]:
                     await updater.update_status(
-                        TaskState.working,
+                        TaskState.completed,
                         new_agent_text_message(response["data"], task.context_id, task.id)
                     )
-                    await updater.add_artifact([Part(root=TextPart(text=response["data"]))], name="Text Response")
 
             elif response["type"] == ChatCompletionTypeEnum.DATA:
-                # Check for tool results
                 data = response.get("data", {})
                 if not data:
                     continue
@@ -138,24 +136,17 @@ class DatetimeParserAgentExecutor(AgentExecutor):
                 combined_response_text = []
 
                 for tool_name, tool_result in data.items():
-                    # Normal processing
                     if tool_result and tool_result.structuredContent:
-                        await updater.add_artifact([Part(root=DataPart(data={tool_name: tool_result.structuredContent}, kind="data", metadata=None))], name=f"{tool_name} Data")
-                        combined_response_text.append(f"I have retrieved data for {tool_name}.")
+                        await updater.add_artifact(
+                            [Part(root=DataPart(data={tool_name: tool_result.structuredContent}, kind="data", metadata=None))],
+                            name=f"{tool_name} Data"
+                        )
                     elif tool_result:
                         content_text = ""
                         if hasattr(tool_result, 'content'):
                             content_text = " ".join([part.text for part in tool_result.content if part.type == "text"])
-                        
-                        # For text results, we add it as an artifact.
-                        # We only include it in the message if it is short (< 200 chars), otherwise we summarize.
-                        await updater.add_artifact([Part(root=TextPart(text=f"{tool_name}: {content_text}"))], name=f"{tool_name} Response")
-
-                        if len(content_text) < 200:
-                            combined_response_text.append(content_text.strip())
-                        else:
-                            combined_response_text.append(
-                                f"I received a response from {tool_name} (see '{tool_name} Response' artifact for details).")
+                        if content_text.strip():
+                            combined_response_text.append(content_text)
                     else:
                         combined_response_text.append(f"No result from {tool_name}")
 
@@ -163,17 +154,16 @@ class DatetimeParserAgentExecutor(AgentExecutor):
                 final_message = " ".join(combined_response_text)
                 await updater.update_status(
                     TaskState.completed,
-                    new_agent_text_message(final_message, task.context_id, task.id)
+                    new_agent_text_message(final_message, task.context_id, task.id) if final_message.strip() else None
                 )
 
             elif response["type"] == ChatCompletionTypeEnum.DONE:
-                # If we reach here successfully, we are done
                 pass
 
-        logger.debug("[weather-agent] execute exiting")
+        logger.debug("[datetime-parser-agent] execute exiting")
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue):
-        logger.debug("[weather-agent] cancel entered")
+        logger.debug("[datetime-parser-agent] cancel entered")
         """Cancel the execution for the given context.
 
         Currently logs the cancellation attempt as the underlying ADK runner
@@ -182,13 +172,13 @@ class DatetimeParserAgentExecutor(AgentExecutor):
         session_id = context.context_id
         if session_id in self._active_sessions:
             logger.info(
-                f"Cancellation requested for active weather-agent session: {session_id}"
+                f"Cancellation requested for active datetime-parser-agent session: {session_id}"
             )
             # TODO: Implement proper cancellation when ADK supports it
             self._active_sessions.discard(session_id)
         else:
             logger.debug(
-                f"Cancellation requested for inactive weather-agent session: {session_id}"
+                f"Cancellation requested for inactive datetime-parser-agent session: {session_id}"
             )
 
         raise ServerError(error=UnsupportedOperationError())

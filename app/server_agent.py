@@ -80,7 +80,7 @@ class AgentServer:
         # Create custom HTTP client for logging
         self.http_client = LoggingHTTPClient()
 
-        self.llm = GroqLLMProvider(api_key=BaseConfig.GROQ_API_KEY, model_name="openai/gpt-oss-120b")
+        self.llm = GroqLLMProvider(api_key=BaseConfig.GROQ_API_KEY, model_name="openai/gpt-oss-20b")
         # self.llm = OpenAILLMProvider(api_key=BaseConfig.OPENAI_API_KEY, model_name="gpt-4.1-nano")
         # self.llm = OllamaLLMProvider(api_key="", model_name="lfm2.5-thinking:latest") # phi4-mini:latest qwen3:4b gemma3:4b-it-qat qwen3:1.7b lfm2.5-thinking:latest
 
@@ -207,7 +207,7 @@ class AgentServer:
                     }
                 }),
                 temperature=1,
-                # reasoning_effort="low"
+                reasoning_effort="low"
             ):
                 logger.debug(f"Response chunk: {response_chunk}")
                 if response_chunk["type"] == ChatCompletionTypeEnum.CONTENT:
@@ -272,7 +272,7 @@ class AgentServer:
                         # Execute tool call on the appropriate server
                         result = await session.call_tool(tool_name, tool_args)
                         logger.info(
-                            f"✅ Tool result from '{server_name}': {result.content}"
+                            f"✅ Tool result from '{server_name}': {result}"
                         )
                         tool_results[tool_name] = result
                         yield ChatCompletionStreamResponseType(
