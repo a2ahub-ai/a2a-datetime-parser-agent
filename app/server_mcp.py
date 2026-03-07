@@ -46,71 +46,27 @@ class DatetimeParserTool(Tool):
                 "description": "Ordered list of atomic time components (left-to-right order in the sentence). Each object contains exactly one time-unit key that it refers to in the user's command; for example, if the time is mentioned as a day, the offset_unit must be day, if it's an hour, the offset_unit must be hour, and similarly for other units.",
                 "items": {
                     "type": "object",
-                    "oneOf": [
-                        {
-                            "properties": {
-                                "mode": {
-                                    "type": "string",
+                    "properties": {
+                        "mode": {
+                            "type": "string",
                                     "enum": ["absolute", "relative"]
-                                },
-                                "time_range": {
-                                    "type": "string",
+                        },
+                        "time_range": {
+                            "type": "string",
                                     "description": "Indicates whether this time element represents the start or end of a time range. For time ranges (e.g., 'from 2pm to 4pm'), the start time would have 'time_range': 'start' and the end time would have 'time_range': 'end'. For single time points (e.g., 'tomorrow at 3pm'), this field can be set to 'start' or omitted based on your preference, but for consistency, you can treat single time points as having 'time_range': 'start'.",
                                     "enum": ["start", "end"]
-                                },
-                                "offset_unit": {
-                                    "type": "string",
-                                    "enum": ["year", "month", "day", "hour", "minute", "second"]
-                                },
-                                "offset_value": {
-                                    "type": "integer",
-                                    "description": "For relative times, the integer offset (e.g., day=0 for 'today', day=1 for 'tomorrow', day=-1 for 'yesterday', month=1 for 'next month', year=-1 for 'last year', hour=-1 for 'last hour', etc.). For absolute times, the concrete value (e.g., month=4 for April)."
-                                }
-                            },
-                            "required": ["mode", "time_range", "offset_unit", "offset_value"],
-                            "additionalProperties": False
                         },
-                        # {
-                        #     "properties": {
-                        #         "time_range": {
-                        #             "type": "string",
-                        #             "enum": ["start", "end"]
-                        #         },
-                        #         "offset_unit": {
-                        #             "type": "string",
-                        #             "enum": ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
-                        #         },
-                        #         "offset_value": {
-                        #             "type": "integer",
-                        #             "description": "For weekdays, use offset_unit for the day and offset_value for the occurrence (e.g., offset_unit='monday', offset_value=2 for 'the Monday after next')."
-                        #         }
-                        #     },
-                        #     "required": ["time_range", "offset_unit", "offset_value"],
-                        #     "additionalProperties": False
-                        # },
-                        {
-                            "properties": {
-                                "mode": {
-                                    "type": "string",
-                                    "enum": ["absolute", "relative"]
-                                },
-                                "time_range": {
-                                    "type": "string",
-                                    "enum": ["start", "end"]
-                                },
-                                "offset_unit": {
-                                    "type": "string",
-                                    "enum": ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
-                                },
-                                "offset_value": {
-                                    "type": "integer",
-                                    "description": "For weekdays, use offset_unit for the day and offset_value for the occurrence (e.g., offset_unit='monday', offset_value=0 for 'this Monday', offset_value=1 for 'next Monday', offset_value=-1 for 'last Monday', etc.). The mode field can be set to either 'absolute' or 'relative' based on your preference, as long as the weekday information is correctly conveyed through the offset_unit and offset_value."
-                                }
-                            },
-                            "required": ["mode", "time_range", "offset_unit", "offset_value"],
-                            "additionalProperties": False
+                        "offset_unit": {
+                            "type": "string",
+                                    "enum": ["year", "month", "day", "hour", "minute", "second", "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+                        },
+                        "offset_value": {
+                            "type": "integer",
+                                    "description": "For relative times, the integer offset (e.g., day=0 for 'today', day=1 for 'tomorrow', day=-1 for 'yesterday', month=1 for 'next month', year=-1 for 'last year', hour=-1 for 'last hour', etc.). For absolute times, the concrete value (e.g., month=4 for April). For weekdays, use offset_unit for the day and offset_value for the occurrence (e.g., offset_unit='monday', offset_value=0 for 'this Monday', offset_value=1 for 'next Monday', offset_value=-1 for 'last Monday', etc.)."
                         }
-                    ]
+                    },
+                    "required": ["mode", "time_range", "offset_unit", "offset_value"],
+                    "additionalProperties": False
                 }
             },
             "components_count": {
@@ -129,7 +85,13 @@ class DatetimeParserTool(Tool):
 
         # Early exit if not parsable or no elements
         if not parsable or not time_elements:
-            return ToolResult(content=TextContent(type="text", text=f"{arguments.get('reasoning', 'Could not parse datetime from input')}"))
+            return ToolResult(
+                content=TextContent(
+                    type="text",
+                    text=f"{
+                        arguments.get(
+                            'reasoning',
+                            'Could not parse datetime from input')}"))
 
         # ── Partition elements by time_range ──
         DATE_UNITS = {"year", "month", "day"}

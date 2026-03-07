@@ -62,6 +62,12 @@ You can use the provided CLI tool to interact with the agent for testing.
 uv run cli --agent "http://localhost:10001"
 ```
 
+### Metadata
+
+```bash
+uv run cli --agent "http://localhost:10001" --metadata single_time_mode=false
+```
+
 ### CLI Usage
 
 Once the CLI is running, you can ask datetime-related questions directly.

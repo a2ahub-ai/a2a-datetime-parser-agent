@@ -82,7 +82,9 @@ class AgentServer:
 
         self.llm = GroqLLMProvider(api_key=BaseConfig.GROQ_API_KEY, model_name="openai/gpt-oss-20b")
         # self.llm = OpenAILLMProvider(api_key=BaseConfig.OPENAI_API_KEY, model_name="gpt-4.1-nano")
-        # self.llm = OllamaLLMProvider(api_key="", model_name="lfm2.5-thinking:latest") # phi4-mini:latest qwen3:4b gemma3:4b-it-qat qwen3:1.7b lfm2.5-thinking:latest
+        # self.llm = OllamaLLMProvider(api_key="",
+        # model_name="lfm2.5-thinking:latest") # phi4-mini:latest qwen3:4b
+        # gemma3:4b-it-qat qwen3:1.7b lfm2.5-thinking:latest
 
     async def connect_to_server(self, server_name: str, url: str):
         """Connect to an MCP server over HTTP
@@ -156,7 +158,7 @@ class AgentServer:
         # Store the session
         self.servers[server_name] = session
 
-    async def process_query(self, messages: List[ChatCompletionMessageParam], 
+    async def process_query(self, messages: List[ChatCompletionMessageParam],
                             extra_arguments: Dict[str, Any] = None
                             ) -> AsyncGenerator[ChatCompletionStreamResponseType, None]:
         """Process a query using GroqLLMProvider and available tools"""
@@ -206,8 +208,8 @@ class AgentServer:
                             "schema": response_json_schema.schema_,
                     }
                 }),
-                temperature=1,
-                reasoning_effort="low"
+                temperature=0.1,
+                reasoning_effort="medium",
             ):
                 logger.debug(f"Response chunk: {response_chunk}")
                 if response_chunk["type"] == ChatCompletionTypeEnum.CONTENT:
@@ -221,7 +223,10 @@ class AgentServer:
                 elif response_chunk["type"] == ChatCompletionTypeEnum.DONE:
                     yield ChatCompletionStreamResponseType(
                         type=ChatCompletionTypeEnum.DONE,
-                        data=None)
+                        data=None,
+                        input_tokens=response_chunk.get("input_tokens"),
+                        output_tokens=response_chunk.get("output_tokens"),
+                    )
                     break
 
             # Process tool calls if any
@@ -286,9 +291,8 @@ class AgentServer:
                         yield ChatCompletionStreamResponseType(
                             type=ChatCompletionTypeEnum.DATA,
                             data=tool_results)
-                        
+
     async def cleanup(self):
         """Clean up resources"""
         await self.exit_stack.aclose()
         await self.http_client.aclose()
-

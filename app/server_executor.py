@@ -86,7 +86,6 @@ class DatetimeParserAgentExecutor(AgentExecutor):
         # dump context for debugging
         if context._params:
             logger.debug(context._params.metadata if context._params.metadata else "No metadata")
-            # {'single_time_mode': False}
         logger.debug(context.context_id)
         logger.debug(context.task_id)
 
@@ -104,13 +103,14 @@ class DatetimeParserAgentExecutor(AgentExecutor):
         updater = TaskUpdater(event_queue, task.id, task.context_id)
 
         # Convert task history to messages
-        messages = self._convert_task_history_to_messages(task.history)
-        
+        # messages = self._convert_task_history_to_messages(task.history)
+        messages = []
+
         # Prepare extra arguments for tool execution from context metadata
+        # Pass all metadata parameters dynamically to allow flexibility
         extra_arguments = {}
         if context._params and context._params.metadata:
-            if 'single_time_mode' in context._params.metadata:
-                extra_arguments['single_time_mode'] = context._params.metadata['single_time_mode']
+            extra_arguments.update(context._params.metadata)
 
         if not messages and query:
             messages.append(cast(ChatCompletionMessageParam, {
@@ -158,7 +158,19 @@ class DatetimeParserAgentExecutor(AgentExecutor):
                 )
 
             elif response["type"] == ChatCompletionTypeEnum.DONE:
-                pass
+                input_tokens = response.get("input_tokens")
+                output_tokens = response.get("output_tokens")
+                logger.info(f"LLM token usage - input: {input_tokens}, output: {output_tokens}")
+                if input_tokens is not None or output_tokens is not None:
+                    await updater.add_artifact(
+                        [Part(root=DataPart(data={
+                            "token_usage": {
+                                "input_tokens": input_tokens,
+                                "output_tokens": output_tokens,
+                            }
+                        }, kind="data", metadata=None))],
+                        name="token_usage"
+                    )
 
         logger.debug("[datetime-parser-agent] execute exiting")
 
@@ -182,4 +194,3 @@ class DatetimeParserAgentExecutor(AgentExecutor):
             )
 
         raise ServerError(error=UnsupportedOperationError())
-

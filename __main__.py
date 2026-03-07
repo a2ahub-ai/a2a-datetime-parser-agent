@@ -29,6 +29,9 @@ from app.server_agent import (
 from app.server_executor import (
     DatetimeParserAgentExecutor,
 )
+from app.server_mcp import (
+    DatetimeParserTool,
+)
 
 from app.utils.logger import logger
 from app.config.settings import BaseConfig
@@ -38,10 +41,11 @@ DEFAULT_PORT = BaseConfig.PORT
 
 
 async def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
+    datetime_parser_tool = DatetimeParserTool()
     skill = AgentSkill(
         id=BaseConfig.AGENT_ID,
-        name="Datetime Parsing Skill",
-        description="Parse natural language datetime expressions into structured datetime formats.",
+        name=f"{datetime_parser_tool.name} Skill",
+        description=datetime_parser_tool.description,
         tags=[
             "datetime parsing",
         ],
